@@ -45,26 +45,48 @@ def index():
 def add_task():
     if request.method == 'POST':
         try:
+            # Preluăm datele din formular
             name = request.form['name']
             category = request.form['category']
             day = request.form['day']
-            duration = float(request.form['duration'])  # Asigură-te că valoarea este numerică
+            duration = float(request.form['duration'])
 
+            # Validăm dacă toate câmpurile sunt completate corect
+            if duration <= 0:
+                return "Durata trebuie să fie un număr pozitiv.", 400
+
+            # Creăm task-ul și îl adăugăm în baza de date
             new_task = Task(name=name, category=category, day=day, duration=duration)
             db.session.add(new_task)
             db.session.commit()
             return redirect('/')
         except KeyError as e:
-            return f"Lipsesc datele necesare: {str(e)}", 400
+            return f"Lipsesc câmpurile necesare: {str(e)}", 400
         except ValueError:
             return "Durata trebuie să fie un număr valid.", 400
     return render_template('add_task.html')
+
 
 
 @app.route('/add_subtask/<int:task_id>', methods=['POST'])
 def add_subtask(task_id):
     name = request.form['name']
     duration = float(request.form['duration'])
+
+    # Găsim task-ul principal
+    task = Task.query.get(task_id)
+    if not task:
+        return "Task-ul principal nu a fost găsit.", 404
+
+    # Calculăm timpul total al subtask-urilor existente
+    existing_subtasks = Subtask.query.filter_by(task_id=task_id).all()
+    total_subtask_time = sum(subtask.duration for subtask in existing_subtasks)
+
+    # Verificăm dacă noul subtask depășește durata task-ului principal
+    if total_subtask_time + duration > task.duration:
+        return f"Timpul total al subtask-urilor ({total_subtask_time + duration} ore) depășește durata task-ului principal ({task.duration} ore).", 400
+
+    # Adăugăm subtask-ul dacă validarea trece
     new_subtask = Subtask(name=name, duration=duration, task_id=task_id)
     db.session.add(new_subtask)
     db.session.commit()
@@ -74,82 +96,63 @@ def add_subtask(task_id):
 @app.route('/optimize', methods=['POST'])
 def optimize_tasks():
     try:
-        time_available = float(request.json['time_available'])
-
-        # Luăm toate sarcinile și subtasks
+        time_available_per_day = request.json['time_available_per_day']  # Ex: {"Luni": 3, "Marți": 4, ...}
         tasks = Task.query.all()
         subtasks = Subtask.query.all()
 
-        # Creăm modelul de optimizare
-        problema = LpProblem("Optimize_Tasks", LpMaximize)
+        tasks_by_day = {day: [task for task in tasks if task.day == day] for day in time_available_per_day.keys()}
+        subtasks_by_task = {task.id: [subtask for subtask in subtasks if subtask.task_id == task.id] for task in tasks}
 
-        # Variabile de decizie
-        task_vars = {task.id: LpVariable(f"task_{task.id}", 0, 1, cat="Binary") for task in tasks}
-        subtask_vars = {subtask.id: LpVariable(f"subtask_{subtask.id}", 0, 1, cat="Binary") for subtask in subtasks}
+        optimization_results = {}
 
-        # Funcția obiectiv: maximizăm numărul de sarcini și subtasks finalizate
-        problema += lpSum(task_vars[task.id] for task in tasks) + lpSum(
-            subtask_vars[subtask.id] for subtask in subtasks)
+        for day, day_tasks in tasks_by_day.items():
+            problema = LpProblem(f"Optimize_Tasks_{day}", LpMaximize)
 
-        # Constrângere: timpul total nu poate depăși timpul disponibil
-        problema += lpSum(task_vars[task.id] * task.duration for task in tasks) + \
-                    lpSum(subtask_vars[subtask.id] * subtask.duration for subtask in subtasks) <= time_available
+            task_vars = {task.id: LpVariable(f"task_{task.id}", 0, 1, cat="Binary") for task in day_tasks}
+            subtask_vars = {subtask.id: LpVariable(f"subtask_{subtask.id}", 0, 1, cat="Binary") for task in day_tasks for subtask in subtasks_by_task[task.id]}
 
-        # Constrângere: o subtask poate fi finalizată doar dacă sarcina principală este completată
-        for subtask in subtasks:
-            problema += subtask_vars[subtask.id] <= task_vars[subtask.task_id]
+            # Funcția obiectiv: maximizăm numărul de subtask-uri finalizate
+            problema += lpSum(subtask_vars[subtask.id] for task in day_tasks for subtask in subtasks_by_task[task.id])
 
-        # Rezolvăm problema
-        problema.solve()
+            # Constrângere: timpul total nu poate depăși timpul disponibil
+            problema += lpSum(subtask_vars[subtask.id] * subtask.duration for task in day_tasks for subtask in subtasks_by_task[task.id]) <= time_available_per_day[day]
 
-        # Organizăm rezultatele
-        tasks_to_do = []
-        tasks_to_skip = []
-        subtasks_to_do = []
-        subtasks_to_skip = []
+            # Constrângere: un task este complet doar dacă toate subtask-urile sale sunt completate
+            for task in day_tasks:
+                for subtask in subtasks_by_task[task.id]:
+                    problema += subtask_vars[subtask.id] <= task_vars[task.id]
 
-        for task in tasks:
-            if task_vars[task.id].varValue == 1:
-                tasks_to_do.append(task)
-            else:
-                tasks_to_skip.append(task)
+            problema.solve()
 
-        for subtask in subtasks:
-            if subtask_vars[subtask.id].varValue == 1:
-                subtasks_to_do.append(subtask)
-            else:
-                subtasks_to_skip.append(subtask)
+            tasks_to_do = []
+            tasks_to_skip = []
+            subtasks_to_do = []
+            subtasks_to_skip = []
 
-        # Reprogramăm sarcinile omise
-        for task in tasks_to_skip:
-            task.day = get_next_available_day(task.day)  # Funcție pentru a găsi ziua următoare liberă
-            db.session.commit()
+            for task in day_tasks:
+                for subtask in subtasks_by_task[task.id]:
+                    if subtask_vars[subtask.id].varValue == 1:
+                        subtasks_to_do.append(subtask)
+                    else:
+                        subtasks_to_skip.append(subtask)
 
-        for subtask in subtasks_to_skip:
-            parent_task = Task.query.get(subtask.task_id)
-            subtask.task_id = parent_task.id
-            subtask.completed = False
-            db.session.commit()
+                # Task-ul principal este considerat complet doar dacă toate subtask-urile sale sunt finalizate
+                if all(subtask_vars[subtask.id].varValue == 1 for subtask in subtasks_by_task[task.id]):
+                    tasks_to_do.append(task)
+                else:
+                    tasks_to_skip.append(task)
 
-        # Returnăm rezultatele într-un format clar
-        return jsonify({
-            "success": True,
-            "tasks_to_do": [{"id": t.id, "name": t.name} for t in tasks_to_do],
-            "tasks_to_skip": [{"id": t.id, "name": t.name} for t in tasks_to_skip],
-            "subtasks_to_do": [{"id": st.id, "name": st.name} for st in subtasks_to_do],
-            "subtasks_to_skip": [{"id": st.id, "name": st.name} for st in subtasks_to_skip],
-        })
+            optimization_results[day] = {
+                "tasks_to_do": [{"id": t.id, "name": t.name} for t in tasks_to_do],
+                "tasks_to_skip": [{"id": t.id, "name": t.name} for t in tasks_to_skip],
+                "subtasks_to_do": [{"id": st.id, "name": st.name} for st in subtasks_to_do],
+                "subtasks_to_skip": [{"id": st.id, "name": st.name} for st in subtasks_to_skip],
+            }
+
+        return jsonify({"success": True, "optimization_results": optimization_results})
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
-
-
-# Funcție pentru a găsi următoarea zi liberă
-def get_next_available_day(current_day):
-    days = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"]
-    current_index = days.index(current_day)
-    next_index = (current_index + 1) % len(days)
-    return days[next_index]
 
 
 if __name__ == '__main__':

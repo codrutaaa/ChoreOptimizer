@@ -9,57 +9,98 @@
 </head>
 <body>
     <div class="container mt-5">
-        <h1>Optimized Home Tasks</h1>
+        <h1 class="text-center mb-4">Optimized Home Tasks</h1>
         <a href="/add" class="btn btn-primary mb-3">Adaugă Sarcină</a>
-        <div>
-            <h2>Lista Sarcini</h2>
-            {% for task in tasks %}
-            <div class="card mb-3">
-                <div class="card-body" id="task-{{ task.id }}">
-                    <h5>{{ task.name }} ({{ task.duration }} ore)</h5>
-                    <p>Categorie: {{ task.category }} | Zi: {{ task.day }}</p>
-                    <form method="POST" action="/add_subtask/{{ task.id }}" onsubmit="return validateSubtask(event, {{ task.duration }}, {{ task.id }})">
-                        <label>Adaugă Subtask:</label>
-                        <input type="text" name="name" placeholder="Nume subtask" required>
-                        <input type="number" name="duration" id="subtask-duration-{{ task.id }}" placeholder="Durata (ore)" step="0.1" required>
-                        <button type="submit" class="btn btn-secondary">Adaugă</button>
-                    </form>
-                    <ul>
-                        {% for subtask in subtasks if subtask.task_id == task.id %}
-                        <li>
-                            {{ subtask.name }} ({{ subtask.duration }} ore)
-                            <span class="subtask-duration" style="display: none;">{{ subtask.duration }}</span>
-                        </li>
-                        {% endfor %}
-                    </ul>
+
+        <!-- Zilele săptămânii -->
+        {% for day in ['Luni', 'Marți', 'Miercuri', 'Joi', 'Vineri', 'Sâmbătă', 'Duminică'] %}
+        <div class="mb-5">
+            <h2 class="text-center bg-light p-3 rounded">{{ day }}</h2>
+            <div class="row">
+                <!-- Task-uri pentru ziua curentă -->
+                {% for task in tasks if task.day == day %}
+                <div class="col-md-4">
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5 class="card-title">{{ task.name }} ({{ task.duration }} ore)</h5>
+                            <p class="card-text">Categorie: {{ task.category }}</p>
+                            <ul class="list-group">
+                                {% for subtask in subtasks if subtask.task_id == task.id %}
+                                <li class="list-group-item">
+                                    {{ subtask.name }} ({{ subtask.duration }} ore)
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            <!-- Formular pentru adăugare subtask -->
+                            <form method="POST" action="/add_subtask/{{ task.id }}" class="mt-3">
+                                <div class="input-group">
+                                    <input type="text" name="name" placeholder="Subtask nou" class="form-control" required>
+                                    <input type="number" name="duration" placeholder="Durată (ore)" class="form-control" step="0.1" required>
+                                    <button type="submit" class="btn btn-secondary">Adaugă</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Formular pentru timpul disponibil -->
+            <div class="mt-3">
+                <label for="time-{{ day }}" class="form-label">Timp disponibil pentru {{ day }} (ore):</label>
+                <div class="input-group">
+                    <input type="number" id="time-{{ day }}" name="{{ day }}" class="form-control" step="0.1" required>
+                    <button class="btn btn-success" onclick="optimizeDay('{{ day }}')">Optimizează</button>
                 </div>
             </div>
-            {% endfor %}
         </div>
-    </div>
-    <script>
-        function validateSubtask(event, taskDuration, taskId) {
-            // Găsim toate subtasks existente pentru task-ul principal
-            const subtaskElements = document.querySelectorAll(`#task-${taskId} .subtask-duration`);
-            let totalSubtaskTime = 0;
+        {% endfor %}
 
-            // Calculăm timpul total alocat subtask-urilor deja existente
-            subtaskElements.forEach(element => {
-                totalSubtaskTime += parseFloat(element.textContent);
-            });
+        <!-- Rezultatele optimizării -->
+            <div id="results" class="mt-5">
+    <h2>Rezultate Optimizare</h2>
+    <div id="results-content"></div>
+</div>
 
-            // Adăugăm timpul subtask-ului curent
-            const newSubtaskTime = parseFloat(document.getElementById(`subtask-duration-${taskId}`).value);
-            totalSubtaskTime += newSubtaskTime;
+<script>
+    function optimizeDay(day) {
+        const timeAvailable = document.getElementById(`time-${day}`).value;
 
-            // Verificăm dacă timpul total depășește durata task-ului principal
-            if (totalSubtaskTime > taskDuration) {
-                alert(`Timpul total alocat subtask-urilor (${totalSubtaskTime} ore) depășește durata task-ului principal (${taskDuration} ore).`);
-                event.preventDefault(); // Oprește trimiterea formularului
-                return false;
-            }
-            return true; // Permite trimiterea formularului
+        if (!timeAvailable || parseFloat(timeAvailable) <= 0) {
+            alert("Introduceți un timp valid!");
+            return;
         }
-    </script>
+
+        const timeAvailablePerDay = { [day]: parseFloat(timeAvailable) };
+
+        axios.post('/optimize', { time_available_per_day: timeAvailablePerDay })
+            .then(response => {
+                if (response.data.success) {
+                    const results = response.data.optimization_results[day];
+                    const resultsDiv = document.getElementById('results-content');
+
+                    resultsDiv.innerHTML += `
+                        <h3>${day}</h3>
+                        <h4>De făcut:</h4>
+                        <ul>
+                            ${results.tasks_to_do.map(task => `<li>Sarcină: ${task.name}</li>`).join('')}
+                            ${results.subtasks_to_do.map(subtask => `<li>Subtask: ${subtask.name}</li>`).join('')}
+                        </ul>
+                        <h4>De omis:</h4>
+                        <ul>
+                            ${results.tasks_to_skip.map(task => `<li>Sarcină: ${task.name}</li>`).join('')}
+                            ${results.subtasks_to_skip.map(subtask => `<li>Subtask: ${subtask.name}</li>`).join('')}
+                        </ul>`;
+                } else {
+                    alert("Eroare la optimizare: " + response.data.error);
+                }
+            })
+            .catch(error => {
+                console.error(error);
+                alert("Eroare la optimizare.");
+            });
+    }
+</script>
+    </div>
 </body>
 </html>
