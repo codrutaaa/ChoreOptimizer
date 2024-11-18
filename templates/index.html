@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimized Home Tasks</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>Optimized Home Tasks</h1>
+        <a href="/add" class="btn btn-primary mb-3">Adaugă Sarcină</a>
+        <div>
+            <h2>Lista Sarcini</h2>
+            {% for task in tasks %}
+            <div class="card mb-3">
+                <div class="card-body" id="task-{{ task.id }}">
+                    <h5>{{ task.name }} ({{ task.duration }} ore)</h5>
+                    <p>Categorie: {{ task.category }} | Zi: {{ task.day }}</p>
+                    <form method="POST" action="/add_subtask/{{ task.id }}" onsubmit="return validateSubtask(event, {{ task.duration }}, {{ task.id }})">
+                        <label>Adaugă Subtask:</label>
+                        <input type="text" name="name" placeholder="Nume subtask" required>
+                        <input type="number" name="duration" id="subtask-duration-{{ task.id }}" placeholder="Durata (ore)" step="0.1" required>
+                        <button type="submit" class="btn btn-secondary">Adaugă</button>
+                    </form>
+                    <ul>
+                        {% for subtask in subtasks if subtask.task_id == task.id %}
+                        <li>
+                            {{ subtask.name }} ({{ subtask.duration }} ore)
+                            <span class="subtask-duration" style="display: none;">{{ subtask.duration }}</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    <script>
+        function validateSubtask(event, taskDuration, taskId) {
+            // Găsim toate subtasks existente pentru task-ul principal
+            const subtaskElements = document.querySelectorAll(`#task-${taskId} .subtask-duration`);
+            let totalSubtaskTime = 0;
+
+            // Calculăm timpul total alocat subtask-urilor deja existente
+            subtaskElements.forEach(element => {
+                totalSubtaskTime += parseFloat(element.textContent);
+            });
+
+            // Adăugăm timpul subtask-ului curent
+            const newSubtaskTime = parseFloat(document.getElementById(`subtask-duration-${taskId}`).value);
+            totalSubtaskTime += newSubtaskTime;
+
+            // Verificăm dacă timpul total depășește durata task-ului principal
+            if (totalSubtaskTime > taskDuration) {
+                alert(`Timpul total alocat subtask-urilor (${totalSubtaskTime} ore) depășește durata task-ului principal (${taskDuration} ore).`);
+                event.preventDefault(); // Oprește trimiterea formularului
+                return false;
+            }
+            return true; // Permite trimiterea formularului
+        }
+    </script>
+</body>
+</html>
