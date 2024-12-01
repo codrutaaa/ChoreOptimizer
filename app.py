@@ -102,13 +102,21 @@ def logout():
     session.pop('username', None)
     return redirect('/landing')
 
-@app.route('/index', methods=['GET', 'POST'])
+# @app.route('/index', methods=['GET', 'POST'])
+# @login_required
+# def index():
+#     tasks = Task.query.all()
+#     subtasks = Subtask.query.all()
+#     optimization_results = session.get('optimization_results', {})
+#     return render_template('index.html', tasks=tasks, optimization_results=optimization_results)
+
+@app.route('/index')
 @login_required
 def index():
     tasks = Task.query.all()
-    subtasks = Subtask.query.all()
-    optimization_results = session.get('optimization_results', {})
-    return render_template('index.html', tasks=tasks, optimization_results=optimization_results)
+    subtasks = Subtask.query.all()  # Fetch all subtasks
+    return render_template('index.html', tasks=tasks, subtasks=subtasks)
+
 
 
 @app.route('/optimize_day/<day>', methods=['POST'])
@@ -219,27 +227,33 @@ def add_task():
 @login_required
 def add_subtask(task_id):
     try:
+        # Get the form data
         name = request.form['name']
         hours = float(request.form['hours'])
         minutes = int(request.form['minutes'])
         duration = hours + minutes / 60
 
+        # Fetch the main task
         task = Task.query.get(task_id)
         if not task:
-            return "Task-ul principal nu a fost găsit.", 404
+            return "Task not found", 404
 
+        # Validate the total subtask duration
         existing_subtasks = Subtask.query.filter_by(task_id=task_id).all()
         total_subtask_time = sum(subtask.duration for subtask in existing_subtasks)
-
         if total_subtask_time + duration > task.duration:
-            return f"Timpul total al subtask-urilor ({total_subtask_time + duration} ore) depășește durata task-ului principal ({task.duration} ore).", 400
+            return f"Total subtask time exceeds the main task duration of {task.duration} hours.", 400
 
+        # Add the subtask
         new_subtask = Subtask(name=name, duration=duration, task_id=task_id)
         db.session.add(new_subtask)
         db.session.commit()
+
+        # Redirect back to the dashboard
         return redirect('/index')
     except Exception as e:
-        return f"Eroare: {str(e)}", 400
+        return f"Error: {str(e)}", 400
+
 
 @app.route('/optimize', methods=['POST'])
 @login_required
