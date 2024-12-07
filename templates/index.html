@@ -111,7 +111,7 @@
             <a href="/add" class="btn btn-primary"><i class="fas fa-plus"></i> Add Chore</a>
         </div>
 
-        <!-- Tasks Section -->
+        <!-- Chores Section -->
         <div class="row">
             {% for day in ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'] %}
             <div class="col-12 mb-4">
@@ -126,7 +126,7 @@
                     </div>
                 </form>
 
-                <!-- Tasks for the Day -->
+                <!-- Chores for the Day -->
                 <div class="row">
                     {% for task in tasks if task.day == day %}
                     <div class="col-md-4">
@@ -169,6 +169,37 @@
                     </div>
                     {% endfor %}
                 </div>
+
+                <!-- Optimization Results -->
+                {% if day in optimization_results %}
+                <div class="optimized-results">
+                    <h5>Optimized Chores:</h5>
+                    <ul>
+                        {% for task in optimization_results[day]['tasks_to_do'] %}
+                        <li>
+                            <strong>{{ task.name }}</strong> ({{ task.duration }} hours)
+                            <ul>
+                                {% for subtask in subtasks if subtask.task_id == task.id %}
+                                <li>{{ subtask.name }} - {{ subtask.duration }} hours</li>
+                                {% endfor %}
+                            </ul>
+                        </li>
+                        {% endfor %}
+                    </ul>
+
+                    <h5>Skipped Chores:</h5>
+                    <ul>
+                        {% for task in optimization_results[day]['tasks_to_skip'] %}
+                        <li>
+                            <strong>{{ task.name }}</strong> ({{ task.duration }} hours)
+                            <form method="POST" action="/reschedule/{{ task.id }}" style="display:inline;">
+                                <button type="submit" class="btn btn-sm btn-warning">Reschedule</button>
+                            </form>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
             </div>
             {% endfor %}
         </div>
