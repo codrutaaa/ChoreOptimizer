@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
 from pulp import LpMaximize, LpProblem, LpVariable, lpSum
+from flask import flash
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
@@ -236,7 +237,8 @@ def add_subtask(task_id):
         existing_subtasks = Subtask.query.filter_by(task_id=task_id).all()
         total_subtask_time = sum(subtask.duration for subtask in existing_subtasks)
         if total_subtask_time + duration > task.duration:
-            return f"Total subtask time exceeds the main task duration of {task.duration} hours.", 400
+            flash(f"Total subtask time exceeds the main task duration of {task.duration} hours.", "danger")
+            return redirect('/index')
 
         # Add the subtask
         new_subtask = Subtask(name=name, duration=duration, task_id=task_id)
@@ -346,6 +348,22 @@ def reschedule_task(task_id):
     except Exception as e:
         return f"Error: {str(e)}", 400
 
+@app.route('/delete_task/<int:task_id>', methods=['DELETE'])
+@login_required
+def delete_task(task_id):
+    try:
+        task = Task.query.get(task_id)
+        if not task:
+            return jsonify({'error': 'Task not found'}), 404
+
+        # Șterge și subtasks asociate
+        Subtask.query.filter_by(task_id=task_id).delete()
+        db.session.delete(task)
+        db.session.commit()
+
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
