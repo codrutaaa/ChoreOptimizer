@@ -45,3 +45,17 @@ body {
 }
 .btn-delete {
     background: #dc3545
+
+/* Adjustments for mobile responsiveness */
+.container-fluid {
+    padding-left: 15px;
+    padding-right: 15px;
+}
+.card {
+    margin-bottom: 20px;
+}
+
+/* Header spacing adjustments for mobile */
+h1, h2 {
+    font-size: 1.5rem;
+}
